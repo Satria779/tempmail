@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 
-// ============ TYPES ============
 interface Mail {
   id: string;
   from: string;
@@ -12,15 +11,18 @@ interface Mail {
   otpCode?: string | null;
 }
 
-// ============ API 1SECMAIL ============
-const API_BASE = 'https://www.1secmail.com/api/v1/';
+// ============ KONFIGURASI API ============
+// INI API KEY YANG LO KASIH
+const API_KEY = 'xemoznya';
+const API_BASE = 'https://api-xemoz-official.my.id/api/tools/tempmail.php';
+const PROXY = 'https://corsproxy.io/?url='; // Buat tembus CORS
 
 // ============ MAIN ============
 export default function App() {
-  const [login, setLogin] = useState<string>(() => {
-    const saved = localStorage.getItem('tempmail_login');
+  const [session, setSession] = useState<string>(() => {
+    const saved = localStorage.getItem('tempmail_session');
     if (saved) return saved;
-    return Math.random().toString(36).substring(2, 10);
+    return 'test_value';
   });
 
   const [inbox, setInbox] = useState<Mail[]>([]);
@@ -28,8 +30,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lastCheck, setLastCheck] = useState<Date>(new Date());
-
-  const domain = '1secmail.com';
 
   // ============ CHECK OTP ============
   const isOtp = (subject: string, body: string): boolean => {
@@ -52,10 +52,10 @@ export default function App() {
     return null;
   };
 
-  // ============ FETCH INBOX ============
+  // ============ FETCH INBOX (PAKE API KEY LO) ============
   const fetchInbox = useCallback(async () => {
-    if (!login.trim()) {
-      setError('Login tidak boleh kosong.');
+    if (!session.trim()) {
+      setError('Session tidak boleh kosong.');
       return;
     }
 
@@ -63,40 +63,39 @@ export default function App() {
     setError(null);
 
     try {
-      const listUrl = `${API_BASE}?action=getMessages&login=${login}&domain=${domain}`;
-      const res = await fetch(listUrl);
-      const data = await res.json();
-
-      if (!Array.isArray(data)) {
-        setError('Gagal mengambil inbox.');
-        setInbox([]);
-        setLoading(false);
-        return;
+      // Panggil API lo dengan API key dan session
+      const apiUrl = `${API_BASE}?session=${encodeURIComponent(session)}&apikey=${API_KEY}`;
+      const proxyUrl = `${PROXY}${encodeURIComponent(apiUrl)}`;
+      
+      const res = await fetch(proxyUrl);
+      const text = await res.text();
+      
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error('Respons API tidak valid: ' + text.slice(0, 100));
       }
 
-      const mails: Mail[] = [];
-      for (const item of data) {
-        const detailUrl = `${API_BASE}?action=readMessage&login=${login}&domain=${domain}&id=${item.id}`;
-        const detailRes = await fetch(detailUrl);
-        const detail = await detailRes.json();
-
-        const bodyText = detail.textBody || detail.htmlBody || '';
-        mails.push({
-          id: String(item.id),
-          from: detail.from || 'Pengirim tidak diketahui',
-          subject: detail.subject || '(tanpa subjek)',
-          body: bodyText,
-          date: detail.date,
+      if (data.status === true && Array.isArray(data.data)) {
+        const mails: Mail[] = data.data.map((item: any) => ({
+          id: String(item.id || item._id || Math.random()),
+          from: item.from || 'Pengirim tidak diketahui',
+          subject: item.subject || '(tanpa subjek)',
+          body: item.body || item.message || '',
+          date: item.date || item.timestamp,
           read: false,
-          isOtp: isOtp(detail.subject || '', bodyText),
-          otpCode: extractOtp(bodyText),
-        });
-      }
-
-      setInbox(mails);
-      setLastCheck(new Date());
-      if (mails.length === 0) {
-        setError('📭 Belum ada email masuk.');
+          isOtp: isOtp(item.subject || '', item.body || ''),
+          otpCode: extractOtp(item.body || ''),
+        }));
+        setInbox(mails);
+        setLastCheck(new Date());
+        if (mails.length === 0) {
+          setError('📭 Belum ada email masuk.');
+        }
+      } else {
+        setError(data.message || 'Gagal mengambil inbox.');
+        setInbox([]);
       }
     } catch (err: any) {
       setError('Error: ' + err.message);
@@ -104,13 +103,13 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [login]);
+  }, [session]);
 
-  // ============ GENERATE EMAIL BARU ============
-  const generateNewLogin = () => {
-    const newLogin = Math.random().toString(36).substring(2, 10);
-    setLogin(newLogin);
-    localStorage.setItem('tempmail_login', newLogin);
+  // ============ GENERATE SESSION BARU ============
+  const generateNewSession = () => {
+    const newSession = 'test_' + Math.random().toString(36).slice(2, 8);
+    setSession(newSession);
+    localStorage.setItem('tempmail_session', newSession);
     setSelectedId(null);
     setInbox([]);
     fetchInbox();
@@ -118,8 +117,8 @@ export default function App() {
 
   // ============ SAVE SESSION ============
   useEffect(() => {
-    localStorage.setItem('tempmail_login', login);
-  }, [login]);
+    localStorage.setItem('tempmail_session', session);
+  }, [session]);
 
   // ============ FORMAT TIME ============
   const formatTime = (ts?: string): string => {
@@ -136,7 +135,7 @@ export default function App() {
   };
 
   const copyEmail = () => {
-    const email = `${login}@${domain}`;
+    const email = `${session}@tempmail.com`;
     navigator.clipboard?.writeText(email);
   };
 
@@ -171,7 +170,7 @@ export default function App() {
               )}
             </button>
             <button
-              onClick={generateNewLogin}
+              onClick={generateNewSession}
               className="bg-white/80 hover:bg-white border border-gray-200/80 px-5 py-2 rounded-xl text-gray-600 text-sm font-medium flex items-center gap-2 transition"
             >
               <i className="fas fa-wand-magic-sparkles"></i> Baru
@@ -186,7 +185,7 @@ export default function App() {
               <i className="fas fa-envelope"></i>
             </div>
             <span className="font-mono text-sm text-gray-700 break-all">
-              {login}@{domain}
+              {session}@tempmail.com
             </span>
           </div>
           <button
@@ -241,7 +240,7 @@ export default function App() {
               <p className="text-gray-400 text-xs mt-1">
                 Kirim email ke{' '}
                 <span className="font-mono text-indigo-500 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200/50">
-                  {login}@{domain}
+                  {session}@tempmail.com
                 </span>
               </p>
               <p className="text-gray-400 text-xs mt-3">
@@ -322,4 +321,4 @@ export default function App() {
       </div>
     </div>
   );
-  }
+            }
