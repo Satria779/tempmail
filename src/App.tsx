@@ -10,6 +10,7 @@ interface Mail {
   timestamp?: string;
   date?: string;
   read?: boolean;
+  isOtp?: boolean;
 }
 
 // ============ API ============
@@ -17,12 +18,39 @@ const API_BASE = 'https://api-xemoz-official.my.id/api/tools/tempmail.php';
 
 // ============ MAIN COMPONENT ============
 export default function App() {
-  const [session, setSession] = useState<string>('test_value');
+  const [session, setSession] = useState<string>(() => {
+    const saved = localStorage.getItem('tempmail_session');
+    return saved || 'test_' + Math.random().toString(36).slice(2, 10);
+  });
   const [inbox, setInbox] = useState<Mail[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [lastCheck, setLastCheck] = useState<Date>(new Date());
 
+  // ============ CHECK OTP ============
+  const isOtp = (subject: string, body: string): boolean => {
+    const keywords = ['OTP', 'kode', 'verifikasi', 'code', 'verification', 'pin', 'password', 'token', '6-digit', '4-digit'];
+    const text = `${subject} ${body}`.toLowerCase();
+    return keywords.some(k => text.includes(k.toLowerCase()));
+  };
+
+  // ============ EXTRACT OTP ============
+  const extractOtp = (text: string): string | null => {
+    const patterns = [
+      /\b\d{4,8}\b/,
+      /\b[A-Z0-9]{4,8}\b/,
+      /\bOTP[:\s]*([A-Z0-9]{4,8})/i,
+      /\bkode[:\s]*([A-Z0-9]{4,8})/i,
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) return match[1] || match[0];
+    }
+    return null;
+  };
+
+  // ============ FETCH INBOX ============
   const fetchInbox = useCallback(async () => {
     if (!session.trim()) {
       setError('Session ID tidak boleh kosong.');
@@ -45,34 +73,50 @@ export default function App() {
       }
 
       if (data.status === true && Array.isArray(data.data)) {
-        setInbox(data.data);
-        if (data.data.length === 0) {
-          setError('Belum ada email masuk.');
+        const newMails = data.data.map((mail: any) => ({
+          ...mail,
+          isOtp: isOtp(mail.subject || '', mail.body || ''),
+          otpCode: extractOtp(mail.body || ''),
+        }));
+        setInbox(newMails);
+        setLastCheck(new Date());
+        if (newMails.length === 0) {
+          setError('📭 Belum ada email masuk.');
         }
       } else {
         setError(data.message || 'Gagal mengambil inbox.');
         setInbox([]);
       }
     } catch (err: any) {
-      setError('Terjadi kesalahan: ' + err.message);
+      setError('Error: ' + err.message);
       setInbox([]);
     } finally {
       setLoading(false);
     }
   }, [session]);
 
+  // ============ SAVE SESSION ============
+  useEffect(() => {
+    localStorage.setItem('tempmail_session', session);
+  }, [session]);
+
+  // ============ AUTO FETCH ============
   useEffect(() => {
     fetchInbox();
-    const interval = setInterval(fetchInbox, 8000);
+    const interval = setInterval(fetchInbox, 6000);
     return () => clearInterval(interval);
   }, [fetchInbox]);
 
+  // ============ GENERATE NEW SESSION ============
   const generateNewSession = () => {
-    const newSession = 'test_' + Math.random().toString(36).slice(2, 8);
+    const newSession = 'test_' + Math.random().toString(36).slice(2, 10);
     setSession(newSession);
     setSelectedId(null);
+    setInbox([]);
+    fetchInbox();
   };
 
+  // ============ FORMAT TIME ============
   const formatTime = (ts?: string): string => {
     if (!ts) return '';
     try {
@@ -82,72 +126,73 @@ export default function App() {
     }
   };
 
+  // ============ TOGGLE SELECT ============
   const toggleSelect = (id: string) => {
     setSelectedId((prev) => (prev === id ? null : id));
   };
 
+  // ============ COPY EMAIL ============
+  const copyEmail = () => {
+    const email = `${session}@tempmail.com`;
+    navigator.clipboard?.writeText(email);
+  };
+
+  // ============ RENDER ============
   return (
-    <div className="min-h-screen bg-[#f6f8fc] flex items-center justify-center px-4 py-10 font-sans">
-      <div className="w-full max-w-4xl mx-auto">
+    <div className="min-h-screen bg-[#f6f8fc] font-sans">
+      <div className="max-w-5xl mx-auto px-4 py-6">
         {/* HEADER */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 bg-white/80 px-5 py-2 rounded-full border border-gray-100/80 shadow-sm mb-4">
-            <i className="fas fa-envelope text-indigo-500 text-lg"></i>
-            <span className="text-sm font-medium text-gray-700">Temp Mail</span>
+        <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500 flex items-center justify-center text-white text-xl font-bold shadow-lg">
+              ✉
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">Temp Mail</h1>
+              <p className="text-xs text-gray-400">Email sementara instan</p>
+            </div>
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-800 tracking-tight">
-            Email <span className="text-indigo-500">Sementara</span>
-          </h1>
-          <p className="text-gray-400 text-sm mt-2 max-w-md mx-auto">
-            Buat email sementara instan — terima pesan tanpa registrasi.
-          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs text-gray-400 bg-white/80 px-3 py-1.5 rounded-full border border-gray-200/80">
+              <i className="fas fa-sync-alt mr-1.5 text-indigo-400"></i>
+              {lastCheck.toLocaleTimeString()}
+            </span>
+            <button
+              onClick={fetchInbox}
+              disabled={loading}
+              className="bg-indigo-500 hover:bg-indigo-600 px-5 py-2 rounded-xl text-white text-sm font-medium flex items-center gap-2 disabled:opacity-60 transition"
+            >
+              {loading ? (
+                <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <><i className="fas fa-rotate"></i> Refresh</>
+              )}
+            </button>
+            <button
+              onClick={generateNewSession}
+              className="bg-white/80 hover:bg-white border border-gray-200/80 px-5 py-2 rounded-xl text-gray-600 text-sm font-medium flex items-center gap-2 transition"
+            >
+              <i className="fas fa-wand-magic-sparkles"></i> Baru
+            </button>
+          </div>
         </div>
 
-        {/* INPUT */}
-        <div className="bg-white/75 backdrop-blur-md shadow-lg rounded-3xl p-6 md:p-8 mb-6 border border-white/30">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-600 mb-1.5">
-                <i className="fas fa-fingerprint mr-2 text-indigo-400"></i>
-                Session ID
-              </label>
-              <input
-                type="text"
-                value={session}
-                onChange={(e) => setSession(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && fetchInbox()}
-                placeholder="test_value"
-                className="w-full px-5 py-3.5 bg-white/80 border border-gray-200/80 rounded-2xl text-gray-800 placeholder:text-gray-400 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition"
-              />
+        {/* EMAIL ADDRESS */}
+        <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200/50 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500">
+              <i className="fas fa-envelope"></i>
             </div>
-            <div className="flex items-end gap-3">
-              <button
-                onClick={fetchInbox}
-                disabled={loading}
-                className="bg-indigo-500 hover:bg-indigo-600 px-6 py-3.5 rounded-2xl text-white font-semibold text-sm flex items-center gap-2 disabled:opacity-60 h-[50px] transition shadow-md hover:shadow-indigo-200"
-              >
-                {loading ? (
-                  <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <i className="fas fa-rotate"></i>
-                    Periksa
-                  </>
-                )}
-              </button>
-              <button
-                onClick={generateNewSession}
-                className="px-5 py-3.5 rounded-2xl border border-gray-200/80 bg-white/60 text-gray-600 text-sm font-medium hover:bg-white/90 transition h-[50px] flex items-center gap-2"
-              >
-                <i className="fas fa-wand-magic-sparkles"></i>
-                Baru
-              </button>
-            </div>
+            <span className="font-mono text-sm text-gray-700 break-all">
+              {session}@tempmail.com
+            </span>
           </div>
-          <p className="text-xs text-gray-400 mt-3">
-            <i className="fas fa-info-circle mr-1.5"></i>
-            Gunakan Session ID yang sama untuk akses inbox yang sama.
-          </p>
+          <button
+            onClick={copyEmail}
+            className="bg-indigo-500 hover:bg-indigo-600 px-4 py-1.5 rounded-xl text-white text-xs font-medium flex items-center gap-1.5 transition"
+          >
+            <i className="fas fa-copy"></i> Salin
+          </button>
         </div>
 
         {/* ERROR */}
@@ -157,30 +202,44 @@ export default function App() {
               inbox.length === 0
                 ? 'bg-blue-50/80 border-blue-200/80 text-blue-600'
                 : 'bg-amber-50/80 border-amber-200/80 text-amber-600'
-            } border rounded-2xl px-5 py-4 text-sm flex items-start gap-3 animate-fadeIn`}
+            } border rounded-2xl px-5 py-3 text-sm flex items-start gap-3 animate-fadeIn mb-4`}
           >
             <i
               className={`fas fa-${
                 inbox.length === 0 ? 'fa-inbox' : 'fa-triangle-exclamation'
               } mt-0.5`}
-            ></i>
+            />
             <span>{error}</span>
           </div>
         )}
 
         {/* INBOX */}
-        <div className="space-y-3 mt-6">
+        <div className="space-y-3">
           {inbox.map((mail) => (
             <div
               key={mail.id}
               onClick={() => toggleSelect(mail.id)}
-              className={`bg-white/75 backdrop-blur-md border border-gray-100/80 rounded-2xl p-5 transition-all shadow-sm hover:shadow-md cursor-pointer ${
-                selectedId === mail.id ? 'border-indigo-300 bg-indigo-50/40' : ''
+              className={`bg-white/80 backdrop-blur-sm border rounded-2xl p-4 transition-all shadow-sm hover:shadow-md cursor-pointer ${
+                selectedId === mail.id
+                  ? 'border-indigo-300 bg-indigo-50/60'
+                  : mail.isOtp
+                  ? 'border-emerald-200/80 bg-emerald-50/40'
+                  : 'border-gray-100/80'
               }`}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {mail.isOtp && (
+                      <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2.5 py-0.5 rounded-full font-semibold border border-emerald-200/50">
+                        <i className="fas fa-key mr-1"></i> OTP
+                      </span>
+                    )}
+                    {mail.otpCode && (
+                      <span className="bg-indigo-100 text-indigo-700 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold border border-indigo-200/50">
+                        {mail.otpCode}
+                      </span>
+                    )}
                     <span className="font-semibold text-gray-800 text-sm break-all">
                       {mail.from || 'Pengirim tidak diketahui'}
                     </span>
@@ -229,7 +288,7 @@ export default function App() {
                       }}
                       className="text-xs text-indigo-500 hover:text-indigo-600 transition flex items-center gap-1.5"
                     >
-                      <i className="fas fa-copy"></i> Salin
+                      <i className="fas fa-copy" /> Salin
                     </button>
                     <button
                       onClick={(e) => {
@@ -243,7 +302,7 @@ export default function App() {
                       }}
                       className="text-xs text-gray-400 hover:text-gray-600 transition flex items-center gap-1.5"
                     >
-                      <i className="fas fa-reply"></i> Balas
+                      <i className="fas fa-reply" /> Balas
                     </button>
                   </div>
                 </div>
@@ -252,16 +311,20 @@ export default function App() {
           ))}
 
           {!loading && inbox.length === 0 && !error && (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 mx-auto rounded-full bg-gray-100/80 flex items-center justify-center mb-4">
-                <i className="fas fa-inbox text-gray-300 text-2xl"></i>
+            <div className="text-center py-16">
+              <div className="w-20 h-20 mx-auto rounded-full bg-gray-100/80 flex items-center justify-center mb-4">
+                <i className="fas fa-inbox text-gray-300 text-3xl" />
               </div>
               <p className="text-gray-400 text-sm">Belum ada email masuk.</p>
               <p className="text-gray-400 text-xs mt-1">
                 Kirim email ke{' '}
-                <span className="font-mono text-indigo-500">
+                <span className="font-mono text-indigo-500 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200/50">
                   {session}@tempmail.com
                 </span>
+              </p>
+              <p className="text-gray-400 text-xs mt-3">
+                <i className="fas fa-clock mr-1.5 text-indigo-300" />
+                Auto-refresh setiap 6 detik
               </p>
             </div>
           )}
@@ -269,8 +332,11 @@ export default function App() {
 
         {/* FOOTER */}
         <div className="text-center text-xs text-gray-400 mt-8 border-t border-gray-200/60 pt-6">
-          <i className="fas fa-shield-halved mr-1.5 text-indigo-300"></i>
+          <i className="fas fa-shield-halved mr-1.5 text-indigo-300" />
           Temp Mail — Email sementara, privasi aman.
+          <span className="mx-2">•</span>
+          <i className="fas fa-bolt mr-1.5 text-indigo-300" />
+          Auto-refresh OTP ready
         </div>
       </div>
     </div>
