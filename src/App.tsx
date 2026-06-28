@@ -228,7 +228,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ===== KOTAK MASUK ===== */}
+        {/* ===== KOTAK MASUK + TOMBOL REFRESH ===== */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
@@ -238,9 +238,24 @@ export default function App() {
               {inbox.length}
             </span>
           </div>
-          <span className="text-[10px] text-gray-400">
-            {inbox.length > 0 ? `${inbox.length} email` : 'Kosong'}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] text-gray-400">
+              {inbox.length > 0 ? `${inbox.length} email` : 'Kosong'}
+            </span>
+            {/* ===== TOMBOL REFRESH DI KOTAK MASUK ===== */}
+            <button
+              onClick={fetchInbox}
+              disabled={loading}
+              className="bg-indigo-100 hover:bg-indigo-200 text-indigo-600 px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition disabled:opacity-50"
+              title="Refresh kotak masuk"
+            >
+              {loading ? (
+                <span className="inline-block w-3 h-3 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
+              ) : (
+                <><i className="fas fa-rotate text-[10px]"></i> Refresh</>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* ===== INBOX LIST ===== */}
@@ -336,4 +351,4 @@ export default function App() {
       </div>
     </div>
   );
-          }
+                      }
