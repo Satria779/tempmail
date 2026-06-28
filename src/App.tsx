@@ -6,37 +6,38 @@ interface Mail {
   from: string;
   subject: string;
   body: string;
-  preview?: string;
-  timestamp?: string;
   date?: string;
   read?: boolean;
   isOtp?: boolean;
   otpCode?: string | null;
 }
 
-// ============ API ============
-const API_BASE = 'https://api-xemoz-official.my.id/api/tools/tempmail.php';
+// ============ API 1SECMAIL ============
+const API_BASE = 'https://www.1secmail.com/api/v1/';
 
-// ============ MAIN COMPONENT ============
+// ============ MAIN ============
 export default function App() {
-  const [session, setSession] = useState<string>(() => {
-    const saved = localStorage.getItem('tempmail_session');
-    return saved || 'test_' + Math.random().toString(36).slice(2, 10);
+  const [login, setLogin] = useState<string>(() => {
+    const saved = localStorage.getItem('tempmail_login');
+    if (saved) return saved;
+    return Math.random().toString(36).substring(2, 10);
   });
+
   const [inbox, setInbox] = useState<Mail[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lastCheck, setLastCheck] = useState<Date>(new Date());
 
+  const domain = '1secmail.com';
+
   // ============ CHECK OTP ============
   const isOtp = (subject: string, body: string): boolean => {
-    const keywords = ['OTP', 'kode', 'verifikasi', 'code', 'verification', 'pin', 'password', 'token', '6-digit', '4-digit'];
+    const keywords = ['OTP', 'kode', 'verifikasi', 'code', 'verification', 'pin', 'token', '6-digit', '4-digit'];
     const text = `${subject} ${body}`.toLowerCase();
     return keywords.some(k => text.includes(k.toLowerCase()));
   };
 
-  // ============ EXTRACT OTP ============
   const extractOtp = (text: string): string | null => {
     const patterns = [
       /\b\d{4,8}\b/,
@@ -53,8 +54,8 @@ export default function App() {
 
   // ============ FETCH INBOX ============
   const fetchInbox = useCallback(async () => {
-    if (!session.trim()) {
-      setError('Session ID tidak boleh kosong.');
+    if (!login.trim()) {
+      setError('Login tidak boleh kosong.');
       return;
     }
 
@@ -62,31 +63,40 @@ export default function App() {
     setError(null);
 
     try {
-      const url = `${API_BASE}?session=${encodeURIComponent(session)}`;
-      const res = await fetch(url);
-      const text = await res.text();
+      const listUrl = `${API_BASE}?action=getMessages&login=${login}&domain=${domain}`;
+      const res = await fetch(listUrl);
+      const data = await res.json();
 
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error('Respons API tidak valid');
+      if (!Array.isArray(data)) {
+        setError('Gagal mengambil inbox.');
+        setInbox([]);
+        setLoading(false);
+        return;
       }
 
-      if (data.status === true && Array.isArray(data.data)) {
-        const newMails = data.data.map((mail: any) => ({
-          ...mail,
-          isOtp: isOtp(mail.subject || '', mail.body || ''),
-          otpCode: extractOtp(mail.body || ''),
-        }));
-        setInbox(newMails);
-        setLastCheck(new Date());
-        if (newMails.length === 0) {
-          setError('Belum ada email masuk.');
-        }
-      } else {
-        setError(data.message || 'Gagal mengambil inbox.');
-        setInbox([]);
+      const mails: Mail[] = [];
+      for (const item of data) {
+        const detailUrl = `${API_BASE}?action=readMessage&login=${login}&domain=${domain}&id=${item.id}`;
+        const detailRes = await fetch(detailUrl);
+        const detail = await detailRes.json();
+
+        const bodyText = detail.textBody || detail.htmlBody || '';
+        mails.push({
+          id: String(item.id),
+          from: detail.from || 'Pengirim tidak diketahui',
+          subject: detail.subject || '(tanpa subjek)',
+          body: bodyText,
+          date: detail.date,
+          read: false,
+          isOtp: isOtp(detail.subject || '', bodyText),
+          otpCode: extractOtp(bodyText),
+        });
+      }
+
+      setInbox(mails);
+      setLastCheck(new Date());
+      if (mails.length === 0) {
+        setError('📭 Belum ada email masuk.');
       }
     } catch (err: any) {
       setError('Error: ' + err.message);
@@ -94,28 +104,22 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [session]);
+  }, [login]);
 
-  // ============ SAVE SESSION ============
-  useEffect(() => {
-    localStorage.setItem('tempmail_session', session);
-  }, [session]);
-
-  // ============ AUTO FETCH ============
-  useEffect(() => {
-    fetchInbox();
-    const interval = setInterval(fetchInbox, 6000);
-    return () => clearInterval(interval);
-  }, [fetchInbox]);
-
-  // ============ GENERATE NEW SESSION ============
-  const generateNewSession = () => {
-    const newSession = 'test_' + Math.random().toString(36).slice(2, 10);
-    setSession(newSession);
+  // ============ GENERATE EMAIL BARU ============
+  const generateNewLogin = () => {
+    const newLogin = Math.random().toString(36).substring(2, 10);
+    setLogin(newLogin);
+    localStorage.setItem('tempmail_login', newLogin);
     setSelectedId(null);
     setInbox([]);
     fetchInbox();
   };
+
+  // ============ SAVE SESSION ============
+  useEffect(() => {
+    localStorage.setItem('tempmail_login', login);
+  }, [login]);
 
   // ============ FORMAT TIME ============
   const formatTime = (ts?: string): string => {
@@ -127,18 +131,15 @@ export default function App() {
     }
   };
 
-  // ============ TOGGLE SELECT ============
   const toggleSelect = (id: string) => {
     setSelectedId((prev) => (prev === id ? null : id));
   };
 
-  // ============ COPY EMAIL ============
   const copyEmail = () => {
-    const email = `${session}@tempmail.com`;
+    const email = `${login}@${domain}`;
     navigator.clipboard?.writeText(email);
   };
 
-  // ============ RENDER ============
   return (
     <div className="min-h-screen bg-[#f6f8fc] font-sans">
       <div className="max-w-5xl mx-auto px-4 py-6">
@@ -170,7 +171,7 @@ export default function App() {
               )}
             </button>
             <button
-              onClick={generateNewSession}
+              onClick={generateNewLogin}
               className="bg-white/80 hover:bg-white border border-gray-200/80 px-5 py-2 rounded-xl text-gray-600 text-sm font-medium flex items-center gap-2 transition"
             >
               <i className="fas fa-wand-magic-sparkles"></i> Baru
@@ -185,7 +186,7 @@ export default function App() {
               <i className="fas fa-envelope"></i>
             </div>
             <span className="font-mono text-sm text-gray-700 break-all">
-              {session}@tempmail.com
+              {login}@{domain}
             </span>
           </div>
           <button
@@ -214,7 +215,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ===== INBOX HEADER ===== */}
+        {/* INBOX HEADER */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
@@ -229,8 +230,27 @@ export default function App() {
           </span>
         </div>
 
-        {/* ===== INBOX ===== */}
+        {/* INBOX LIST */}
         <div className="space-y-3">
+          {inbox.length === 0 && !loading && !error && (
+            <div className="text-center py-16">
+              <div className="w-20 h-20 mx-auto rounded-full bg-gray-100/80 flex items-center justify-center mb-4">
+                <i className="fas fa-inbox text-gray-300 text-3xl" />
+              </div>
+              <p className="text-gray-400 text-sm">Belum ada email masuk.</p>
+              <p className="text-gray-400 text-xs mt-1">
+                Kirim email ke{' '}
+                <span className="font-mono text-indigo-500 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200/50">
+                  {login}@{domain}
+                </span>
+              </p>
+              <p className="text-gray-400 text-xs mt-3">
+                <i className="fas fa-clock mr-1.5 text-indigo-300" />
+                Klik Refresh untuk mengecek email baru
+              </p>
+            </div>
+          )}
+
           {inbox.map((mail) => (
             <div
               key={mail.id}
@@ -257,36 +277,20 @@ export default function App() {
                       </span>
                     )}
                     <span className="font-semibold text-gray-800 text-sm break-all">
-                      {mail.from || 'Pengirim tidak diketahui'}
+                      {mail.from}
                     </span>
                     <span className="text-xs text-gray-400">•</span>
                     <span className="text-xs text-gray-400 truncate">
-                      {mail.subject || '(tanpa subjek)'}
+                      {mail.subject}
                     </span>
-                    {!mail.read && (
-                      <span className="bg-indigo-100/80 text-indigo-600 text-[10px] px-2.5 py-0.5 rounded-full font-medium uppercase tracking-wide border border-indigo-200/50">
-                        Baru
-                      </span>
-                    )}
                   </div>
                   <p className="text-sm text-gray-500 mt-1 line-clamp-2 max-w-full">
-                    {mail.body?.replace(/<[^>]+>/g, '').slice(0, 120) ||
-                      mail.preview ||
-                      'Tidak ada pratinjau'}
+                    {mail.body.replace(/<[^>]+>/g, '').slice(0, 120)}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
                   <span className="text-[10px] text-gray-400 whitespace-nowrap">
-                    {formatTime(mail.timestamp || mail.date)}
-                  </span>
-                  <span
-                    className={`text-[10px] px-2.5 py-0.5 rounded-full font-medium ${
-                      mail.read
-                        ? 'bg-gray-100/80 text-gray-400'
-                        : 'bg-indigo-100/80 text-indigo-600'
-                    }`}
-                  >
-                    {mail.read ? 'Dibaca' : 'Belum dibaca'}
+                    {formatTime(mail.date)}
                   </span>
                 </div>
               </div>
@@ -298,63 +302,24 @@ export default function App() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigator.clipboard?.writeText(
-                          mail.body?.replace(/<[^>]+>/g, '') || ''
-                        );
+                        navigator.clipboard?.writeText(mail.body.replace(/<[^>]+>/g, ''));
                       }}
                       className="text-xs text-indigo-500 hover:text-indigo-600 transition flex items-center gap-1.5"
                     >
                       <i className="fas fa-copy" /> Salin
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.open(
-                          `mailto:${mail.from}?subject=${encodeURIComponent(
-                            mail.subject || ''
-                          )}`,
-                          '_blank'
-                        );
-                      }}
-                      className="text-xs text-gray-400 hover:text-gray-600 transition flex items-center gap-1.5"
-                    >
-                      <i className="fas fa-reply" /> Balas
                     </button>
                   </div>
                 </div>
               )}
             </div>
           ))}
-
-          {!loading && inbox.length === 0 && !error && (
-            <div className="text-center py-16">
-              <div className="w-20 h-20 mx-auto rounded-full bg-gray-100/80 flex items-center justify-center mb-4">
-                <i className="fas fa-inbox text-gray-300 text-3xl" />
-              </div>
-              <p className="text-gray-400 text-sm">Belum ada email masuk.</p>
-              <p className="text-gray-400 text-xs mt-1">
-                Kirim email ke{' '}
-                <span className="font-mono text-indigo-500 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200/50">
-                  {session}@tempmail.com
-                </span>
-              </p>
-              <p className="text-gray-400 text-xs mt-3">
-                <i className="fas fa-clock mr-1.5 text-indigo-300" />
-                Auto-refresh setiap 6 detik
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* FOOTER */}
         <div className="text-center text-xs text-gray-400 mt-8 border-t border-gray-200/60 pt-6">
           <i className="fas fa-shield-halved mr-1.5 text-indigo-300" />
           Temp Mail — Email sementara, privasi aman.
-          <span className="mx-2">•</span>
-          <i className="fas fa-bolt mr-1.5 text-indigo-300" />
-          Auto-refresh OTP ready
         </div>
       </div>
     </div>
   );
-              }
+  }
