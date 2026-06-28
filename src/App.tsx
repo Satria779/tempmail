@@ -30,7 +30,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lastCheck, setLastCheck] = useState<Date>(new Date());
 
-  // ============ FETCH INBOX ============
+  // ============ FETCH INBOX (CEK PESAN) ============
   const fetchInbox = useCallback(async () => {
     if (!session.trim()) {
       setError('Session tidak boleh kosong.');
@@ -109,7 +109,7 @@ export default function App() {
     return null;
   };
 
-  // ============ GENERATE SESSION BARU ============
+  // ============ GENERATE EMAIL BARU ============
   const generateNewSession = () => {
     const newSession = 'test_' + Math.random().toString(36).slice(2, 8);
     setSession(newSession);
@@ -242,12 +242,12 @@ export default function App() {
             <span className="text-[10px] text-gray-400">
               {inbox.length > 0 ? `${inbox.length} email` : 'Kosong'}
             </span>
-            {/* ===== TOMBOL REFRESH DI KOTAK MASUK ===== */}
+            {/* ===== TOMBOL REFRESH DI KOTAK MASUK (CEK PESAN) ===== */}
             <button
               onClick={fetchInbox}
               disabled={loading}
               className="bg-indigo-100 hover:bg-indigo-200 text-indigo-600 px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition disabled:opacity-50"
-              title="Refresh kotak masuk"
+              title="Cek pesan baru"
             >
               {loading ? (
                 <span className="inline-block w-3 h-3 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
@@ -351,4 +351,4 @@ export default function App() {
       </div>
     </div>
   );
-                      }
+        }
