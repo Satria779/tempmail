@@ -1,4 +1,3 @@
-import React from 'react';
 import { Mail } from '../types';
 import { formatTime, stripHtml, truncate } from '../utils/helpers';
 
