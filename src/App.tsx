@@ -52,15 +52,12 @@ export default function App() {
         throw new Error('Respons API tidak valid: ' + text.slice(0, 100));
       }
 
-      // ============ CEK STATUS ============
       if (data.status === true && data.result) {
-        // ===== AMBIL EMAIL ASLI =====
         if (data.result.email) {
           setEmail(data.result.email);
           localStorage.setItem('tempmail_email', data.result.email);
         }
 
-        // ===== AMBIL INBOX =====
         const rawInbox = data.result.inbox || [];
         const mails: Mail[] = rawInbox.map((item: any) => ({
           id: String(item.id || item._id || Math.random()),
@@ -135,11 +132,6 @@ export default function App() {
     if (savedEmail) setEmail(savedEmail);
   }, []);
 
-  // ============ AUTO FETCH ============
-  useEffect(() => {
-    fetchInbox();
-  }, [fetchInbox]);
-
   // ============ FORMAT TIME ============
   const formatTime = (ts?: string): string => {
     if (!ts) return '';
@@ -199,7 +191,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* ===== EMAIL ADDRESS (PAKE EMAIL ASLI DARI API) ===== */}
+        {/* ===== EMAIL ADDRESS ===== */}
         <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200/50 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500">
@@ -344,4 +336,4 @@ export default function App() {
       </div>
     </div>
   );
-      }
+          }
