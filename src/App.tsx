@@ -11,8 +11,8 @@ interface Mail {
   date?: string;
   read?: boolean;
   isOtp?: boolean;
+  otpCode?: string; 
 }
-
 // ============ API ============
 const API_BASE = 'https://api-xemoz-official.my.id/api/tools/tempmail.php';
 
