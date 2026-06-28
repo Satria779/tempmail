@@ -11,8 +11,9 @@ interface Mail {
   date?: string;
   read?: boolean;
   isOtp?: boolean;
-  otpCode?: string; 
+  otpCode?: string | null;
 }
+
 // ============ API ============
 const API_BASE = 'https://api-xemoz-official.my.id/api/tools/tempmail.php';
 
@@ -81,7 +82,7 @@ export default function App() {
         setInbox(newMails);
         setLastCheck(new Date());
         if (newMails.length === 0) {
-          setError('📭 Belum ada email masuk.');
+          setError('Belum ada email masuk.');
         }
       } else {
         setError(data.message || 'Gagal mengambil inbox.');
@@ -213,7 +214,22 @@ export default function App() {
           </div>
         )}
 
-        {/* INBOX */}
+        {/* ===== INBOX HEADER ===== */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
+              📥 Kotak Masuk
+            </h2>
+            <span className="bg-gray-200/80 text-gray-600 text-[10px] px-2.5 py-0.5 rounded-full font-medium">
+              {inbox.length}
+            </span>
+          </div>
+          <span className="text-[10px] text-gray-400">
+            {inbox.length > 0 ? `${inbox.length} email` : 'Kosong'}
+          </span>
+        </div>
+
+        {/* ===== INBOX ===== */}
         <div className="space-y-3">
           {inbox.map((mail) => (
             <div
@@ -341,4 +357,4 @@ export default function App() {
       </div>
     </div>
   );
-}
+              }
