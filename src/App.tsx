@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 
+// ============ API ============
+const API_KEY = 'xemoznya';
+const API_BASE = 'https://api-xemoz-official.my.id/api/tools/tempmail.php';
+
+// ============ TYPES ============
 interface Mail {
   id: string;
   from: string;
@@ -11,25 +16,80 @@ interface Mail {
   otpCode?: string | null;
 }
 
-// ============ KONFIGURASI API ============
-// INI API KEY YANG LO KASIH
-const API_KEY = 'xemoznya';
-const API_BASE = 'https://api-xemoz-official.my.id/api/tools/tempmail.php';
-const PROXY = 'https://corsproxy.io/?url='; // Buat tembus CORS
-
 // ============ MAIN ============
 export default function App() {
   const [session, setSession] = useState<string>(() => {
     const saved = localStorage.getItem('tempmail_session');
-    if (saved) return saved;
-    return 'test_value';
+    return saved || 'test_' + Math.random().toString(36).slice(2, 8);
   });
 
+  const [email, setEmail] = useState<string>('');
   const [inbox, setInbox] = useState<Mail[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lastCheck, setLastCheck] = useState<Date>(new Date());
+
+  // ============ FETCH INBOX ============
+  const fetchInbox = useCallback(async () => {
+    if (!session.trim()) {
+      setError('Session tidak boleh kosong.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const url = `${API_BASE}?session=${encodeURIComponent(session)}&apikey=${API_KEY}`;
+      const res = await fetch(url);
+      const text = await res.text();
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error('Respons API tidak valid: ' + text.slice(0, 100));
+      }
+
+      // ============ CEK STATUS ============
+      if (data.status === true && data.result) {
+        // ===== AMBIL EMAIL ASLI =====
+        if (data.result.email) {
+          setEmail(data.result.email);
+          localStorage.setItem('tempmail_email', data.result.email);
+        }
+
+        // ===== AMBIL INBOX =====
+        const rawInbox = data.result.inbox || [];
+        const mails: Mail[] = rawInbox.map((item: any) => ({
+          id: String(item.id || item._id || Math.random()),
+          from: item.from || 'Pengirim tidak diketahui',
+          subject: item.subject || '(tanpa subjek)',
+          body: item.body || item.message || '',
+          date: item.date || item.timestamp,
+          read: false,
+          isOtp: isOtp(item.subject || '', item.body || ''),
+          otpCode: extractOtp(item.body || ''),
+        }));
+
+        setInbox(mails);
+        setLastCheck(new Date());
+
+        if (mails.length === 0) {
+          setError('📭 Belum ada email masuk.');
+        }
+      } else {
+        setError(data.message || 'Gagal mengambil inbox.');
+        setInbox([]);
+      }
+    } catch (err: any) {
+      setError('Error: ' + err.message);
+      setInbox([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
 
   // ============ CHECK OTP ============
   const isOtp = (subject: string, body: string): boolean => {
@@ -52,64 +112,13 @@ export default function App() {
     return null;
   };
 
-  // ============ FETCH INBOX (PAKE API KEY LO) ============
-  const fetchInbox = useCallback(async () => {
-    if (!session.trim()) {
-      setError('Session tidak boleh kosong.');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Panggil API lo dengan API key dan session
-      const apiUrl = `${API_BASE}?session=${encodeURIComponent(session)}&apikey=${API_KEY}`;
-      const proxyUrl = `${PROXY}${encodeURIComponent(apiUrl)}`;
-      
-      const res = await fetch(proxyUrl);
-      const text = await res.text();
-      
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error('Respons API tidak valid: ' + text.slice(0, 100));
-      }
-
-      if (data.status === true && Array.isArray(data.data)) {
-        const mails: Mail[] = data.data.map((item: any) => ({
-          id: String(item.id || item._id || Math.random()),
-          from: item.from || 'Pengirim tidak diketahui',
-          subject: item.subject || '(tanpa subjek)',
-          body: item.body || item.message || '',
-          date: item.date || item.timestamp,
-          read: false,
-          isOtp: isOtp(item.subject || '', item.body || ''),
-          otpCode: extractOtp(item.body || ''),
-        }));
-        setInbox(mails);
-        setLastCheck(new Date());
-        if (mails.length === 0) {
-          setError('📭 Belum ada email masuk.');
-        }
-      } else {
-        setError(data.message || 'Gagal mengambil inbox.');
-        setInbox([]);
-      }
-    } catch (err: any) {
-      setError('Error: ' + err.message);
-      setInbox([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [session]);
-
   // ============ GENERATE SESSION BARU ============
   const generateNewSession = () => {
     const newSession = 'test_' + Math.random().toString(36).slice(2, 8);
     setSession(newSession);
+    setEmail('');
     localStorage.setItem('tempmail_session', newSession);
+    localStorage.removeItem('tempmail_email');
     setSelectedId(null);
     setInbox([]);
     fetchInbox();
@@ -119,6 +128,17 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('tempmail_session', session);
   }, [session]);
+
+  // ============ LOAD SAVED EMAIL ============
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('tempmail_email');
+    if (savedEmail) setEmail(savedEmail);
+  }, []);
+
+  // ============ AUTO FETCH ============
+  useEffect(() => {
+    fetchInbox();
+  }, [fetchInbox]);
 
   // ============ FORMAT TIME ============
   const formatTime = (ts?: string): string => {
@@ -135,14 +155,15 @@ export default function App() {
   };
 
   const copyEmail = () => {
-    const email = `${session}@tempmail.com`;
-    navigator.clipboard?.writeText(email);
+    if (email) {
+      navigator.clipboard?.writeText(email);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#f6f8fc] font-sans">
       <div className="max-w-5xl mx-auto px-4 py-6">
-        {/* HEADER */}
+        {/* ===== HEADER ===== */}
         <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-500 flex items-center justify-center text-white text-xl font-bold shadow-lg">
@@ -178,25 +199,26 @@ export default function App() {
           </div>
         </div>
 
-        {/* EMAIL ADDRESS */}
+        {/* ===== EMAIL ADDRESS (PAKE EMAIL ASLI DARI API) ===== */}
         <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200/50 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500">
               <i className="fas fa-envelope"></i>
             </div>
             <span className="font-mono text-sm text-gray-700 break-all">
-              {session}@tempmail.com
+              {email || 'Memuat email...'}
             </span>
           </div>
           <button
             onClick={copyEmail}
-            className="bg-indigo-500 hover:bg-indigo-600 px-4 py-1.5 rounded-xl text-white text-xs font-medium flex items-center gap-1.5 transition"
+            disabled={!email}
+            className="bg-indigo-500 hover:bg-indigo-600 px-4 py-1.5 rounded-xl text-white text-xs font-medium flex items-center gap-1.5 transition disabled:opacity-50"
           >
             <i className="fas fa-copy"></i> Salin
           </button>
         </div>
 
-        {/* ERROR */}
+        {/* ===== ERROR ===== */}
         {error && (
           <div
             className={`${
@@ -214,7 +236,7 @@ export default function App() {
           </div>
         )}
 
-        {/* INBOX HEADER */}
+        {/* ===== KOTAK MASUK ===== */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
@@ -229,7 +251,7 @@ export default function App() {
           </span>
         </div>
 
-        {/* INBOX LIST */}
+        {/* ===== INBOX LIST ===== */}
         <div className="space-y-3">
           {inbox.length === 0 && !loading && !error && (
             <div className="text-center py-16">
@@ -240,7 +262,7 @@ export default function App() {
               <p className="text-gray-400 text-xs mt-1">
                 Kirim email ke{' '}
                 <span className="font-mono text-indigo-500 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200/50">
-                  {session}@tempmail.com
+                  {email || '...'}
                 </span>
               </p>
               <p className="text-gray-400 text-xs mt-3">
@@ -314,6 +336,7 @@ export default function App() {
           ))}
         </div>
 
+        {/* ===== FOOTER ===== */}
         <div className="text-center text-xs text-gray-400 mt-8 border-t border-gray-200/60 pt-6">
           <i className="fas fa-shield-halved mr-1.5 text-indigo-300" />
           Temp Mail — Email sementara, privasi aman.
@@ -321,4 +344,4 @@ export default function App() {
       </div>
     </div>
   );
-            }
+      }
